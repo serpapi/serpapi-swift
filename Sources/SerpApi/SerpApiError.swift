@@ -5,6 +5,7 @@ public enum SerpApiError: Error, LocalizedError {
     case requestFailed(String)
     case jsonParseError(String)
     case invalidDecoder(String)
+    case htmlParseError(String)
     
     public var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ public enum SerpApiError: Error, LocalizedError {
             return "JSON parse error: \(message)"
         case .invalidDecoder(let message):
             return "Invalid decoder: \(message)"
+        case .htmlParseError(let message):
+            return "HTML parse error: \(message)"
         }
     }
 }
