@@ -107,6 +107,14 @@ for location in locations {
 }
 ```
 
+### Search Archive API
+
+Retrieve past search results (free of charge).
+
+```swift
+let results = try await client.searchArchive(searchID: "SEARCH_ID")
+```
+
 ### Account API
 
 Get your account information and usage.
@@ -116,15 +124,14 @@ let account = try await client.account()
 print(account)
 ```
 
-### Search Archive API
-
-Retrieve past search results (free of charge).
-
-```swift
-let results = try await client.searchArchive(searchID: "SEARCH_ID")
-```
-
 ## Developer Guide
+
+### Dependencies
+Ruby and Rake must be installed to run the tests and demo, as well Swift via Xcode command line tools.
+
+```bash
+brew install ruby
+```
 
 ### Tests
 
@@ -149,6 +156,12 @@ Generate documentation using:
 
 ```bash
 rake doc
+```
+
+For the full list of targets, run:
+
+```bash
+rake -T
 ```
 
 ## License
