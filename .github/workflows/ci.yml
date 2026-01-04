@@ -15,9 +15,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Setup Swift
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest'
+      
+      - name: Verify Swift Version
         run: |
           swift --version
+          SWIFT_VERSION=$(swift --version | grep -oE 'Swift version [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+')
+          echo "Detected Swift version: $SWIFT_VERSION"
+          MAJOR=$(echo $SWIFT_VERSION | cut -d. -f1)
+          MINOR=$(echo $SWIFT_VERSION | cut -d. -f2)
+          if [ "$MAJOR" -lt 6 ] || ([ "$MAJOR" -eq 6 ] && [ "$MINOR" -lt 2 ]); then
+            echo "Error: Swift 6.2 or later is required, but found $SWIFT_VERSION"
+            echo "Please update the Xcode version in the workflow or wait for GitHub Actions to provide Swift 6.2"
+            exit 1
+          fi
+          echo "✓ Swift version $SWIFT_VERSION meets requirement (>= 6.2)"
       
       - name: Resolve Dependencies
         run: swift package resolve
@@ -41,6 +56,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest'
+      
       - name: Run SwiftLint
         uses: norio-nomura/action-swiftlint@3.2.1
         continue-on-error: true
@@ -53,6 +73,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest'
       
       - name: Run Tests with Coverage
         run: swift test --enable-code-coverage
