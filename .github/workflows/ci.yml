@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Swift
+        run: |
+          swift --version
+      
+      - name: Resolve Dependencies
+        run: swift package resolve
+      
+      - name: Build
+        run: swift build
+      
+      - name: Build Demo
+        run: swift build --product Demo
+      
+      - name: Test
+        run: swift test
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+        continue-on-error: true
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Run SwiftLint
+        uses: norio-nomura/action-swiftlint@3.2.1
+        continue-on-error: true
+        with:
+          args: --strict
+
+  code-coverage:
+    name: Code Coverage
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Run Tests with Coverage
+        run: swift test --enable-code-coverage
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+        continue-on-error: true
+      
+      - name: Generate Coverage Report
+        run: |
+          bin_path=$(swift build --show-bin-path)
+          xctest_path=$(find "$bin_path" -name "*.xctest" -type d | head -1)
+          if [ -n "$xctest_path" ]; then
+            llvm_cov=$(xcrun -f llvm-cov 2>/dev/null || echo "")
+            if [ -n "$llvm_cov" ]; then
+              $llvm_cov report "$xctest_path/Contents/MacOS/SerpApiTests" \
+                -instr-profile=.build/debug/codecov/default.profdata \
+                -ignore-filename-regex='.build|Tests' || true
+            fi
+          fi
+        continue-on-error: true
+
