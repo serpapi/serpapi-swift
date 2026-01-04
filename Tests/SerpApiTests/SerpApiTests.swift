@@ -121,12 +121,76 @@ final class SerpApiTests: XCTestCase {
              case .requestFailed(let msg):
                  XCTAssertTrue(msg.contains("Invalid API key") || msg.contains("401"), "Unexpected error message: \(msg)")
              default:
-                 // Sometimes the API might return different errors, but usually it's requestFailed
-                 break
+                 XCTFail("Unexpected error type: \(error)")
              }
         } catch {
-             // Depending on how backend responds to invalid key (usually JSON error)
-             // Our client throws SerpApiError.requestFailed if status != 200
+             XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testErrorDescriptions() {
+        let errors: [SerpApiError] = [
+            .invalidParams("param error"),
+            .requestFailed("request failed"),
+            .jsonParseError("parse error"),
+            .invalidDecoder("decoder error")
+        ]
+        
+        for error in errors {
+            XCTAssertFalse(error.localizedDescription.isEmpty)
+        }
+    }
+    
+    func testClientDescription() {
+        // Test with long key
+        let longKeyClient = SerpApiClient(params: ["api_key": "1234567890", "engine": "google"])
+        let desc1 = String(describing: longKeyClient)
+        XCTAssertTrue(desc1.contains("1234****7890"))
+        XCTAssertTrue(desc1.contains("google"))
+        
+        // Test with short key
+        let shortKeyClient = SerpApiClient(params: ["api_key": "123", "engine": "google"])
+        let desc2 = String(describing: shortKeyClient)
+        XCTAssertTrue(desc2.contains("****"))
+        
+        // Test with no key
+        let noKeyClient = SerpApiClient(params: ["engine": "google"])
+        let desc3 = String(describing: noKeyClient)
+        XCTAssertTrue(desc3.contains("nil"))
+    }
+    
+    func testInvalidArchiveFormat() async {
+        let client = SerpApiClient()
+        do {
+            _ = try await client.searchArchive(searchID: "123", format: "xml")
+            XCTFail("Should fail with invalid format")
+        } catch let error as SerpApiError {
+            switch error {
+            case .invalidDecoder(let msg):
+                XCTAssertEqual(msg, "format must be json or html")
+            default:
+                XCTFail("Unexpected error type: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+    
+    func testHtmlError() async {
+        // Trigger an error in HTML mode (e.g. 401 with invalid key)
+        let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
+        do {
+            _ = try await client.html(params: ["q": "Coffee"])
+            XCTFail("Should fail with invalid key")
+        } catch let error as SerpApiError {
+            switch error {
+            case .requestFailed(let msg):
+                XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+            default:
+                XCTFail("Unexpected error type: \(error)")
+            }
+        } catch {
+             XCTFail("Unexpected error type: \(error)")
         }
     }
 }
