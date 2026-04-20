@@ -5,6 +5,7 @@ struct EventsApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .tint(SerpApiTheme.accentBlue)
         }
     }
 }

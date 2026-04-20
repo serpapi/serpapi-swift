@@ -3,13 +3,14 @@ import SwiftUI
 struct EventsListView: View {
     @ObservedObject var viewModel: EventsViewModel
     @State private var showingFilters = false
-    
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         List {
             if let error = viewModel.errorMessage {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(SerpApiTheme.danger)
                 }
             }
 
@@ -39,6 +40,10 @@ struct EventsListView: View {
             await viewModel.searchEvents()
         }
         .navigationTitle("Events")
+        #if os(iOS)
+        .listStyle(.insetGrouped)
+        #endif
+        .applySerpListChrome(colorScheme: colorScheme)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: { Task { await viewModel.searchEvents() } }) {
@@ -64,8 +69,28 @@ struct EventsListView: View {
             if viewModel.isLoading && viewModel.events.isEmpty {
                 ProgressView("Searching events...")
                     .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(
+                        SerpApiTheme.cardBackground(for: colorScheme).opacity(0.95),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(SerpApiTheme.cardBorder(for: colorScheme), lineWidth: 1)
+                    )
             }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applySerpListChrome(colorScheme: ColorScheme) -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            self
+                .scrollContentBackground(.hidden)
+                .background(SerpApiTheme.appBackground(for: colorScheme))
+        } else {
+            self.background(SerpApiTheme.appBackground(for: colorScheme))
         }
     }
 }
@@ -112,10 +137,11 @@ struct EventRowView: View {
             if let link = event.link, let url = URL(string: link) {
                 Link(destination: url) {
                     Text("View More")
-                        .font(.caption)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 12)
-                        .background(Color.blue.opacity(0.1))
+                        .font(.caption.weight(.semibold))
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 14)
+                        .background(SerpApiTheme.accentBlue.opacity(0.14))
+                        .foregroundStyle(SerpApiTheme.accentBlue)
                         .cornerRadius(12)
                 }
             }
