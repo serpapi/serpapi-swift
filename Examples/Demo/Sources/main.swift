@@ -1,6 +1,8 @@
 import Foundation
 import SerpApi
 
+// Command line interface to interact with SerpApi.com
+//
 @main
 struct Demo {
     static func main() async {

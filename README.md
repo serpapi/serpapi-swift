@@ -12,7 +12,7 @@ Query a vast range of data at scale, including web search results, flight schedu
 
 ## Features
 
-* **Persistent Connections**: Uses `URLSession` persistent connection pooling for faster response times (2x faster).
+* **Configurable Session Mode**: Uses persistent `URLSession` pooling by default, with optional ephemeral mode via `"persistent": "false"`.
 * **Async/Await**: Native Swift concurrency support for non-blocking operations.
 * **Type-Safe**: Clean API design with error handling.
 * **Extensive Documentation**: Easy to follow with real-world examples.
@@ -61,7 +61,7 @@ let client = SerpApiClient(params: [
     "engine": "google",
     "api_key": ProcessInfo.processInfo.environment["SERPAPI_KEY"] ?? "",
     "timeout": "30",   // HTTP timeout in seconds (default: 120)
-    "persistent": "true" // Keep socket open (default: true)
+    "persistent": "true" // Use persistent session; set "false" for ephemeral mode
 ])
 
 // Override specific parameters per request
@@ -145,11 +145,33 @@ rake test
 
 ### Demo
 
-Run the demo application to see the library in action.
+Run the command-line demo application to see the library in action.
 
 ```bash
 rake demo
 ```
+
+### Examples
+
+The repository includes standalone example packages in the `Examples` directory. Keeping examples in separate packages ensures the core library remains platform-agnostic and easy to integrate, while providing a "real-world" testing ground for the SDK.
+
+*   **Demo**: A command-line tool showing basic search, HTML output, and API interactions.
+*   **EventsDemo**: A full SwiftUI iOS / macOS application for searching local events with GPS support and date filtering.
+
+To run the **EventsDemo**:
+*   **Via CLI** (macOS Simulator):
+    ```bash
+    rake ios
+    ```
+    *(Requires full Xcode installation. The task will attempt to find/boot a simulator and launch the app.)*
+*   **Via CLI** (macOS Desktop version):
+    ```bash
+    rake events
+    ```
+*   **Via Xcode** (Full iOS App):
+    1. Open `Package.swift` in Xcode.
+    2. Select the `EventsDemo` scheme.
+    3. Select an iOS Simulator and press `Run`.
 
 ### Documentation
 

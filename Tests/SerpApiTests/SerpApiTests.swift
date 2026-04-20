@@ -33,6 +33,29 @@ final class SerpApiTests: XCTestCase {
         XCTAssertEqual(client.persistent, true)
         XCTAssertNotNil(client.params["source"])
     }
+
+    func testClientParamsDoNotIncludeClientSideOptions() {
+        let client = SerpApiClient(params: [
+            "api_key": "test_key",
+            "engine": "google",
+            "timeout": "30",
+            "persistent": "false"
+        ])
+
+        XCTAssertNil(client.params["timeout"])
+        XCTAssertNil(client.params["persistent"])
+        XCTAssertEqual(client.params["api_key"], "test_key")
+        XCTAssertEqual(client.params["engine"], "google")
+    }
+
+    func testRedactedURLStringMasksApiKey() throws {
+        let url = try XCTUnwrap(URL(string: "https://serpapi.com/search?q=coffee&api_key=secret123&engine=google"))
+        let redacted = SerpApiClient.redactedURLString(url)
+
+        XCTAssertFalse(redacted.contains("secret123"))
+        XCTAssertTrue(redacted.contains("api_key=REDACTED"))
+        XCTAssertTrue(redacted.contains("q=coffee"))
+    }
     
     // MARK: - Integration Tests
     

@@ -73,9 +73,10 @@ public class SerpApiClient: CustomStringConvertible {
         }
         self.params = baseParams
         
-        let configuration = URLSessionConfiguration.default
+        let configuration = self.persistent ? URLSessionConfiguration.default : URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = self.timeout
         // URLSession handles persistent connections by default via its connection pool.
+        // When `persistent` is false, an ephemeral configuration avoids persisting caches/cookies.
         self.session = URLSession(configuration: configuration)
     }
     
@@ -190,6 +191,19 @@ public class SerpApiClient: CustomStringConvertible {
         case json
         case html
     }
+
+    static func redactedURLString(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+        components.queryItems = components.queryItems?.map { item in
+            if item.name == Self.paramApiKey {
+                return URLQueryItem(name: item.name, value: "REDACTED")
+            }
+            return item
+        }
+        return components.string ?? url.absoluteString
+    }
     
     private func query(params: [String: String]) -> [String: String] {
         var q = self.params
@@ -207,6 +221,7 @@ public class SerpApiClient: CustomStringConvertible {
         guard let url = components?.url else {
             throw SerpApiError.invalidParams("Invalid URL components")
         }
+        let redactedURL = Self.redactedURLString(url)
         
         let (data, response) = try await session.data(from: url)
         
@@ -216,35 +231,41 @@ public class SerpApiClient: CustomStringConvertible {
         
         switch decoder {
         case .json:
+            if httpResponse.statusCode != Self.httpStatusCodeSuccess {
+                do {
+                    let json = try JSONSerialization.jsonObject(with: data, options: [])
+                    if let dict = json as? [String: Any] {
+                        if let error = dict["error"] as? String {
+                            throw SerpApiError.requestFailed("HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(httpResponse.statusCode)")
+                        }
+                        throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) response: \(dict) on get url: \(redactedURL)")
+                    }
+                    throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(redactedURL)")
+                } catch let error as SerpApiError {
+                    throw error
+                } catch {
+                    let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "<non-utf8 body>"
+                    let preview = String(body.prefix(500))
+                    throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) body: \(preview) on get url: \(redactedURL)")
+                }
+            }
+
             do {
                 let json = try JSONSerialization.jsonObject(with: data, options: [])
-                
-                if let dict = json as? [String: Any], let error = dict["error"] as? String {
-                    throw SerpApiError.requestFailed("HTTP request failed with error: \(error) from url: \(url), response status: \(httpResponse.statusCode)")
-                }
-                
-                if httpResponse.statusCode != Self.httpStatusCodeSuccess {
-                    // Try to parse error from body if possible
-                    if let dict = json as? [String: Any] {
-                        throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) response: \(dict) on get url: \(url)")
-                    }
-                    throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(url)")
-                }
-                
                 return json
             } catch {
                 if let decodingError = error as? SerpApiError {
                     throw decodingError
                 }
                 // If it wasn't our error, it's a parse error
-                throw SerpApiError.jsonParseError("JSON parse error: \(error.localizedDescription) on get url: \(url), response status: \(httpResponse.statusCode)")
+                throw SerpApiError.jsonParseError("JSON parse error: \(error.localizedDescription) on get url: \(redactedURL), response status: \(httpResponse.statusCode)")
             }
         case .html:
             if httpResponse.statusCode != Self.httpStatusCodeSuccess {
-                throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(url)")
+                throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(redactedURL)")
             }
             guard let html = String(data: data, encoding: .utf8) else {
-                throw SerpApiError.htmlParseError("Failed to decode HTML as UTF-8 from url: \(url)")
+                throw SerpApiError.htmlParseError("Failed to decode HTML as UTF-8 from url: \(redactedURL)")
             }
             return html
         }
