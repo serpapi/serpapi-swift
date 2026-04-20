@@ -50,6 +50,10 @@ do {
 
 The SerpApi key can be obtained from [serpapi.com/signup](https://serpapi.com/users/sign_up?plan=free).
 
+Demo of the Events example app (macOS GUI):
+
+<video src="media/serpapi_swift_event.mp4" controls playsinline width="100%"></video>
+
 ## Advanced Usage
 
 ### Configuration
