@@ -69,19 +69,10 @@ task :coverage do
   end
 end
 
-desc 'validate all the examples (comprehensive set of tests)'
-task :regression do
-  puts 'Regression tests not implemented yet'
-end
-
-desc 'run benchmark tests'
-task :benchmark do
-  puts 'Benchmark tests not implemented yet'
-end
-
 desc 'run linting'
 task :lint do
   if which('swiftlint')
+    ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
     sh 'swiftlint'
   else
     puts 'swiftlint not found, skipping lint'
@@ -99,11 +90,22 @@ end
 
 desc 'generate documentation'
 task :doc do
+  ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
   sh 'swift package generate-documentation'
 end
 
-namespace :demo do
-  desc 'run demo in iOS simulator'
+desc 'run the CLI demo (Examples/Demo)'
+task :demo do
+  sh 'swift run --package-path Examples/Demo'
+end
+
+desc 'run the EventsDemo GUI on macOS'
+task :events do
+  sh 'swift run --package-path Examples/EventsDemo'
+end
+
+namespace :events do
+  desc 'run EventsDemo in iOS simulator'
   task :ios do
     # Ensure we use the full Xcode path for simulator tools
     developer_dir = '/Applications/Xcode.app/Contents/Developer'
@@ -159,11 +161,10 @@ namespace :demo do
     end
   end
 
-  desc 'run GUI EventsDemo in macOS'
-  task :macos do
-    sh 'swift run --package-path Examples/EventsDemo'
-  end
 end
+
+desc 'alias for events:ios (run EventsDemo in iOS simulator)'
+task ios: 'events:ios'
 
 desc 'print current version'
 task :version do

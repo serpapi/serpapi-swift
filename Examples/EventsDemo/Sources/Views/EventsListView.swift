@@ -2,7 +2,6 @@ import SwiftUI
 
 struct EventsListView: View {
     @ObservedObject var viewModel: EventsViewModel
-    @State private var showingFilters = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -16,7 +15,11 @@ struct EventsListView: View {
 
             if viewModel.events.isEmpty && !viewModel.isLoading {
                 if #available(iOS 17.0, macOS 14.0, *) {
-                    ContentUnavailableView("No Events Found", systemImage: "magnifyingglass", description: Text("Try searching for something else or change filters."))
+                    ContentUnavailableView(
+                        "No Events Found",
+                        systemImage: "magnifyingglass",
+                        description: Text("Try searching for something else or change filters.")
+                    )
                 } else {
                     VStack(spacing: 16) {
                         Image(systemName: "magnifyingglass")
@@ -46,7 +49,9 @@ struct EventsListView: View {
         .applySerpListChrome(colorScheme: colorScheme)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { Task { await viewModel.searchEvents() } }) {
+                Button {
+                    Task { await viewModel.searchEvents() }
+                } label: {
                     Image(systemName: "arrow.clockwise")
                 }
             }
@@ -55,9 +60,6 @@ struct EventsListView: View {
                     ProgressView()
                 }
             }
-        }
-        .sheet(isPresented: $showingFilters) {
-            FiltersView(viewModel: viewModel)
         }
         .task {
             // Initial load if api key exists

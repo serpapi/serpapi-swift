@@ -1,0 +1,46 @@
+excluded:
+  - .build
+  - Examples/**/.build
+  - Tests/**/*.generated.swift
+  - "**/.build"
+  - "**/DerivedSources"
+  - "**/*PackageTests.derived"
+
+disabled_rules:
+  - trailing_whitespace
+  - todo
+  - trailing_comma
+
+line_length:
+  warning: 140
+  error: 220
+  ignores_urls: true
+  ignores_comments: true
+
+identifier_name:
+  min_length:
+    warning: 1
+  excluded:
+    - id
+    - x
+    - y
+    - q
+    - h
+    - fd
+    - pb
+
+type_body_length:
+  warning: 350
+  error: 500
+
+file_length:
+  warning: 600
+  error: 1000
+
+function_body_length:
+  warning: 80
+  error: 150
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25

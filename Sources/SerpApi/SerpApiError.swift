@@ -22,4 +22,3 @@ public enum SerpApiError: Error, LocalizedError {
         }
     }
 }
-

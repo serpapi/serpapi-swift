@@ -76,7 +76,7 @@ class EventsViewModel: NSObject, ObservableObject, CLLocationManagerDelegate {
             self.locationManager.stopUpdatingLocation()
             
             if useCurrentLocation {
-                geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, error in
+                geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
                     guard let self = self else { return }
                     
                     if let place = placemarks?.first {

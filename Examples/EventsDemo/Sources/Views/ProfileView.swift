@@ -94,13 +94,20 @@ struct ProfileView: View {
                 Text(accountInfo?.email.isEmpty == false ? accountInfo!.email : "Your SerpApi Account")
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text(accountInfo?.plan.isEmpty == false ? accountInfo!.plan : (apiKey.isEmpty ? "No API key configured" : "Loading account…"))
+                Text(planSubtitle)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
 
             Spacer()
         }
+    }
+
+    private var planSubtitle: String {
+        if let plan = accountInfo?.plan, !plan.isEmpty {
+            return plan
+        }
+        return apiKey.isEmpty ? "No API key configured" : "Loading account…"
     }
 
     private var apiKeyCard: some View {

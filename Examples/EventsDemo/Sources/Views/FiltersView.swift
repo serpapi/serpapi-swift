@@ -40,12 +40,12 @@ struct FiltersView: View {
                 }
                 
                 Section {
-                    Button(action: {
+                    Button {
                         dismiss()
                         Task {
                             await viewModel.searchEvents()
                         }
-                    }) {
+                    } label: {
                         Label("Apply & Search", systemImage: "magnifyingglass")
                             .frame(maxWidth: .infinity)
                     }

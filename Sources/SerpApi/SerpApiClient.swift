@@ -229,24 +229,35 @@ public class SerpApiClient: CustomStringConvertible {
             throw SerpApiError.requestFailed("Invalid response type")
         }
         
+        let status = httpResponse.statusCode
+
         switch decoder {
         case .json:
-            if httpResponse.statusCode != Self.httpStatusCodeSuccess {
+            if status != Self.httpStatusCodeSuccess {
                 do {
                     let json = try JSONSerialization.jsonObject(with: data, options: [])
                     if let dict = json as? [String: Any] {
                         if let error = dict["error"] as? String {
-                            throw SerpApiError.requestFailed("HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(httpResponse.statusCode)")
+                            throw SerpApiError.requestFailed(
+                                "HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(status)"
+                            )
                         }
-                        throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) response: \(dict) on get url: \(redactedURL)")
+                        throw SerpApiError.requestFailed(
+                            "HTTP request failed with response status: \(status) response: \(dict) on get url: \(redactedURL)"
+                        )
                     }
-                    throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(redactedURL)")
+                    throw SerpApiError.requestFailed(
+                        "HTTP request failed with response status: \(status) on get url: \(redactedURL)"
+                    )
                 } catch let error as SerpApiError {
                     throw error
                 } catch {
-                    let body = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "<non-utf8 body>"
+                    let body = String(data: data, encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "<non-utf8 body>"
                     let preview = String(body.prefix(500))
-                    throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) body: \(preview) on get url: \(redactedURL)")
+                    throw SerpApiError.requestFailed(
+                        "HTTP request failed with response status: \(status) body: \(preview) on get url: \(redactedURL)"
+                    )
                 }
             }
 
@@ -257,12 +268,15 @@ public class SerpApiClient: CustomStringConvertible {
                 if let decodingError = error as? SerpApiError {
                     throw decodingError
                 }
-                // If it wasn't our error, it's a parse error
-                throw SerpApiError.jsonParseError("JSON parse error: \(error.localizedDescription) on get url: \(redactedURL), response status: \(httpResponse.statusCode)")
+                throw SerpApiError.jsonParseError(
+                    "JSON parse error: \(error.localizedDescription) on get url: \(redactedURL), response status: \(status)"
+                )
             }
         case .html:
-            if httpResponse.statusCode != Self.httpStatusCodeSuccess {
-                throw SerpApiError.requestFailed("HTTP request failed with response status: \(httpResponse.statusCode) on get url: \(redactedURL)")
+            if status != Self.httpStatusCodeSuccess {
+                throw SerpApiError.requestFailed(
+                    "HTTP request failed with response status: \(status) on get url: \(redactedURL)"
+                )
             }
             guard let html = String(data: data, encoding: .utf8) else {
                 throw SerpApiError.htmlParseError("Failed to decode HTML as UTF-8 from url: \(redactedURL)")
