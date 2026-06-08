@@ -1,31 +1,52 @@
-# EventsDemo App
+# EventsDemo
 
-This is a SwiftUI application demonstrating how to use SerpApi to search for local events.
-
-## Prerequisites
-
-- Xcode 13.0 or later
-- A SerpApi API Key (you can get one at [serpapi.com](https://serpapi.com))
-
-## How to Run
-
-1. Open the `Package.swift` file in Xcode.
-   ```bash
-   open Package.swift
-   ```
-2. In Xcode, select the `EventsDemo` scheme from the toolbar.
-3. Select an iOS Simulator (e.g., iPhone 15 Pro) as the destination.
-4. Press `Cmd + R` to run.
+A SwiftUI app (macOS and iOS) that searches for local events using the [Google Events engine](https://serpapi.com/google-events-api).
 
 ## Features
 
-- **Profile**: Enter and save your SerpApi Key.
-- **Events**: View local events with images, dates, and locations.
-- **Filters**:
-  - **Location**: Use GPS (default) or manually enter a city (e.g., "Paris, France").
-  - **Date Range**: Select custom dates or use the "Next Weekend" shortcut.
+- Browse upcoming events by location and date range
+- Uses device GPS to auto-detect current location (CoreLocation)
+- API key stored persistently via `@AppStorage`
+- Picks up `SERPAPI_KEY` from the environment on first launch if no key is saved
 
-## Notes
+## Structure
 
-- The app uses `CLLocationManager` for GPS. On the simulator, you can simulate location via `Features > Location`.
-- API Requests are made to `serpapi.com` using the `google_events` engine.
+```
+Sources/
+├── EventsApp.swift           # App entry point
+├── SerpApiTheme.swift        # Brand colors and styling constants
+├── WindowFrameAdjuster.swift # macOS window size helper
+├── ViewModels/
+│   └── EventsViewModel.swift # Fetches events, manages location & filters
+└── Views/
+    ├── ContentView.swift     # TabView root (Events + Profile tabs)
+    ├── EventsListView.swift  # Event cards list
+    ├── FiltersView.swift     # Date range and location filters
+    └── ProfileView.swift     # API key entry
+```
+
+## Run
+
+```bash
+SERPAPI_KEY=your_key swift run --package-path Examples/EventsDemo
+```
+
+Or via Rake from the repo root:
+
+```bash
+SERPAPI_KEY=your_key rake events
+```
+
+To run in an iOS simulator:
+
+```bash
+rake ios
+```
+
+> On the simulator, set a location via `Features > Location` in the Simulator menu.
+
+## Test
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path Examples/EventsDemo
+```
