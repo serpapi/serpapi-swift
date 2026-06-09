@@ -168,6 +168,10 @@ public class SerpApiClient: CustomStringConvertible {
         return params[Self.paramApiKey]
     }
     
+    deinit {
+        session.invalidateAndCancel()
+    }
+
     /// Close open connection if active
     ///
     /// In URLSession, this invalidates the session and cancels tasks.
