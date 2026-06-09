@@ -253,6 +253,8 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
                     throw SerpApiError.requestFailed(
                         "HTTP request failed with response status: \(status) on get url: \(redactedURL)"
                     )
+                } catch is CancellationError {
+                    throw SerpApiError.cancellationError
                 } catch let error as SerpApiError {
                     throw error
                 } catch {
@@ -268,6 +270,8 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
             do {
                 let json = try JSONSerialization.jsonObject(with: data, options: [])
                 return json
+            } catch is CancellationError {
+                throw SerpApiError.cancellationError
             } catch {
                 if let decodingError = error as? SerpApiError {
                     throw decodingError

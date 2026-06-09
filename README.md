@@ -147,6 +147,13 @@ export SERPAPI_KEY="your_key"
 rake test
 ```
 
+To run tests with a coverage report:
+
+```bash
+export SERPAPI_KEY="your_key"
+rake coverage
+```
+
 ### Demo
 
 Run the command-line demo application to see the library in action.
