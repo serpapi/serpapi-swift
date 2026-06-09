@@ -41,7 +41,7 @@ jobs:
         run: swift build
       
       - name: Build Demo
-        run: swift build --product Demo
+        run: swift build --package-path Examples/Demo --product Demo
       
       - name: Test
         run: swift test
