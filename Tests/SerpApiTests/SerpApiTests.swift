@@ -244,4 +244,15 @@ final class SerpApiTests: XCTestCase {
         client = nil
         // No crashes should occur during deallocation
     }
+
+    func testCancellationErrorCase() {
+        // Test that SerpApiError has a cancellationError case
+        let error = SerpApiError.cancellationError
+        XCTAssertEqual(error.errorDescription, "Request was cancelled")
+    }
+
+    func testCancellationErrorDescription() {
+        let error = SerpApiError.cancellationError
+        XCTAssertEqual(error.errorDescription, "Request was cancelled")
+    }
 }
