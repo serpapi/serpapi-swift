@@ -17,8 +17,14 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     private static let backend = "serpapi.com"
     private static let defaultTimeout: TimeInterval = 120.0
     private static let defaultPersistent = true
+    private static let defaultMaxRetries = 3
+    private static let defaultRetryBaseDelay: TimeInterval = 0.5
+    private static let defaultRetryMaxDelay: TimeInterval = 8.0
     private static let paramTimeout = "timeout"
     private static let paramPersistent = "persistent"
+    private static let paramMaxRetries = "max_retries"
+    private static let paramRetryBaseDelay = "retry_base_delay"
+    private static let paramRetryMaxDelay = "retry_max_delay"
     private static let paramSource = "source"
     private static let paramApiKey = "api_key"
     private static let paramEngine = "engine"
@@ -29,16 +35,28 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     private static let formatJson = "json"
     private static let formatHtml = "html"
     private static let httpStatusCodeSuccess = 200
-    
+    private static let headerRetryAfter = "Retry-After"
+    /// HTTP status codes that are considered transient and worth retrying.
+    private static let retryableStatusCodes: Set<Int> = [429, 500, 502, 503, 504]
+
     /// HTTP timeout for requests in seconds
     public let timeout: TimeInterval
-    
+
     /// Keep socket connection open to save on SSL handshake / connection reconnection
     public let persistent: Bool
-    
+
+    /// Maximum number of automatic retries for transient failures (HTTP 429/5xx and transient network errors)
+    public let maxRetries: Int
+
+    /// Base delay in seconds for exponential backoff between retries
+    public let retryBaseDelay: TimeInterval
+
+    /// Maximum delay in seconds for any single backoff wait (also caps server `Retry-After`)
+    public let retryMaxDelay: TimeInterval
+
     /// Default query parameters
     public let params: [String: String]
-    
+
     private let session: URLSession
     
     /// Constructor
@@ -59,15 +77,24 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     ///   - `engine`: [String] Search engine selected.
     ///   - `persistent`: [String] "true" or "false". Keep socket connection open. [default: "true"]
     ///   - `timeout`: [String] HTTP get max timeout in seconds [default: "120"]
+    ///   - `max_retries`: [String] number of automatic retries for transient failures (HTTP 429/5xx, network blips) [default: "3"]
+    ///   - `retry_base_delay`: [String] base delay in seconds for exponential backoff [default: "0.5"]
+    ///   - `retry_max_delay`: [String] maximum delay in seconds for a single backoff wait [default: "8.0"]
     public init(params: [String: String] = [:]) {
         self.timeout = TimeInterval(params[Self.paramTimeout] ?? String(Self.defaultTimeout)) ?? Self.defaultTimeout
         self.persistent = (params[Self.paramPersistent] ?? (Self.defaultPersistent ? "true" : "false")) == "true"
-        
+        self.maxRetries = max(0, params[Self.paramMaxRetries].flatMap(Int.init) ?? Self.defaultMaxRetries)
+        self.retryBaseDelay = max(0, params[Self.paramRetryBaseDelay].flatMap(TimeInterval.init) ?? Self.defaultRetryBaseDelay)
+        self.retryMaxDelay = max(0, params[Self.paramRetryMaxDelay].flatMap(TimeInterval.init) ?? Self.defaultRetryMaxDelay)
+
         var baseParams = params
         // These are client-side config, not to be sent to API unless intended (async is sent)
         baseParams.removeValue(forKey: Self.paramTimeout)
         baseParams.removeValue(forKey: Self.paramPersistent)
-        
+        baseParams.removeValue(forKey: Self.paramMaxRetries)
+        baseParams.removeValue(forKey: Self.paramRetryBaseDelay)
+        baseParams.removeValue(forKey: Self.paramRetryMaxDelay)
+
         if baseParams[Self.paramSource] == nil {
             baseParams[Self.paramSource] = "serpapi-swift:\(SerpApi.version)"
         }
@@ -208,7 +235,63 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
         }
         return components.string ?? url.absoluteString
     }
-    
+
+    /// Whether a response with the given HTTP status code should be retried.
+    static func isRetryable(status: Int) -> Bool {
+        retryableStatusCodes.contains(status)
+    }
+
+    /// Whether a thrown `URLError` is transient and worth retrying.
+    /// `.cancelled` is intentionally excluded so cancellation propagates instead of being retried.
+    static func isRetryable(urlError: URLError) -> Bool {
+        switch urlError.code {
+        case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Full-jitter exponential backoff delay (in seconds) for a 0-based attempt index.
+    ///
+    /// Returns a uniformly random value in `0...min(maxDelay, base * 2^attempt)`, which spreads
+    /// retries out to avoid thundering-herd behavior under concurrent load.
+    static func backoffDelay(attempt: Int, base: TimeInterval, max maxDelay: TimeInterval) -> TimeInterval {
+        let exponential = base * pow(2.0, Double(attempt))
+        let capped = Swift.min(maxDelay, exponential)
+        guard capped > 0 else { return 0 }
+        return Double.random(in: 0...capped)
+    }
+
+    /// Parse a `Retry-After` header value into seconds from now.
+    /// Supports both delta-seconds (e.g. `"5"`) and HTTP-date (e.g. `"Wed, 21 Oct 2015 07:28:00 GMT"`).
+    static func parseRetryAfter(_ value: String) -> TimeInterval? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        if let seconds = TimeInterval(trimmed) {
+            return Swift.max(0, seconds)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let date = formatter.date(from: trimmed) {
+            return Swift.max(0, date.timeIntervalSinceNow)
+        }
+        return nil
+    }
+
+    /// Sleep before the next retry, honoring a server `Retry-After` delay when present
+    /// (capped to `retryMaxDelay`), otherwise using full-jitter exponential backoff.
+    /// Cancellation-aware: `Task.sleep` throws `CancellationError` if the task is cancelled.
+    private func sleepBeforeRetry(attempt: Int, retryAfter: TimeInterval?) async throws {
+        let delay = retryAfter.map { Swift.min($0, retryMaxDelay) }
+            ?? Self.backoffDelay(attempt: attempt, base: retryBaseDelay, max: retryMaxDelay)
+        if delay > 0 {
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
+    }
+
+
     private func query(params: [String: String]) -> [String: String] {
         var q = self.params
         for (key, value) in params {
@@ -221,20 +304,56 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
         let queryItems = query(params: params).map { URLQueryItem(name: $0.key, value: $0.value) }
         var components = URLComponents(string: "https://\(Self.backend)\(endpoint)")
         components?.queryItems = queryItems
-        
+
         guard let url = components?.url else {
             throw SerpApiError.invalidParams("Invalid URL components")
         }
         let redactedURL = Self.redactedURLString(url)
-        
-        let (data, response) = try await session.data(from: url)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw SerpApiError.requestFailed("Invalid response type")
-        }
-        
-        let status = httpResponse.statusCode
 
+        var attempt = 0
+        while true {
+            let data: Data
+            let httpResponse: HTTPURLResponse
+            do {
+                let (responseData, response) = try await session.data(from: url)
+                guard let http = response as? HTTPURLResponse else {
+                    throw SerpApiError.requestFailed("Invalid response type")
+                }
+                data = responseData
+                httpResponse = http
+            } catch let error as URLError {
+                // A cancelled request must propagate as cancellation, never be retried or wrapped.
+                if error.code == .cancelled {
+                    throw CancellationError()
+                }
+                if attempt < maxRetries, Self.isRetryable(urlError: error) {
+                    try await sleepBeforeRetry(attempt: attempt, retryAfter: nil)
+                    attempt += 1
+                    continue
+                }
+                throw SerpApiError.requestFailed(
+                    "HTTP request failed with network error: \(error.localizedDescription) on get url: \(redactedURL)"
+                )
+            }
+
+            let status = httpResponse.statusCode
+
+            // Retry transient HTTP status codes while attempts remain, honoring Retry-After.
+            if status != Self.httpStatusCodeSuccess,
+               attempt < maxRetries,
+               Self.isRetryable(status: status) {
+                let retryAfter = httpResponse.value(forHTTPHeaderField: Self.headerRetryAfter)
+                    .flatMap(Self.parseRetryAfter)
+                try await sleepBeforeRetry(attempt: attempt, retryAfter: retryAfter)
+                attempt += 1
+                continue
+            }
+
+            return try decode(data: data, status: status, decoder: decoder, redactedURL: redactedURL)
+        }
+    }
+
+    private func decode(data: Data, status: Int, decoder: DecoderType, redactedURL: String) throws -> Any {
         switch decoder {
         case .json:
             if status != Self.httpStatusCodeSuccess {

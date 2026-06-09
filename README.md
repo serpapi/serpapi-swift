@@ -75,6 +75,22 @@ let results = try await client.search(params: [
 ])
 ```
 
+### Retries & Exponential Backoff
+
+Transient failures (HTTP `429`/`5xx` and brief network errors) are retried automatically using full-jitter exponential backoff. The server's `Retry-After` header is honored when present. Retry behavior is **optional and fully configurable** — it defaults to `max_retries = 3` and can be disabled by setting `max_retries` to `"0"`.
+
+```swift
+let client = SerpApiClient(params: [
+    "engine": "google",
+    "api_key": "YOUR_API_KEY",
+    "max_retries": "3",        // retry attempts for transient failures (default: 3, set "0" to disable)
+    "retry_base_delay": "0.5", // base delay in seconds for backoff (default: 0.5)
+    "retry_max_delay": "8.0"   // cap for any single backoff wait, also caps Retry-After (default: 8.0)
+])
+```
+
+Only transient failures are retried — client errors such as `401` (invalid key) fail immediately, and cancellation always propagates without being retried.
+
 ### Async Search (Non-blocking)
 
 SerpApi supports non-blocking search submission via `async=true`. This allows you to submit a batch of searches and retrieve them later.
