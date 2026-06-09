@@ -12,7 +12,7 @@ import FoundationNetworking
 /// * Location API
 /// * Account API
 /// * Search Archive API
-public class SerpApiClient: CustomStringConvertible {
+public final class SerpApiClient: CustomStringConvertible, Sendable {
     
     private static let backend = "serpapi.com"
     private static let defaultTimeout: TimeInterval = 120.0
@@ -37,7 +37,7 @@ public class SerpApiClient: CustomStringConvertible {
     public let persistent: Bool
     
     /// Default query parameters
-    public private(set) var params: [String: String]
+    public let params: [String: String]
     
     private let session: URLSession
     
