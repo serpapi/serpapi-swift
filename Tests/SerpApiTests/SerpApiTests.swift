@@ -246,7 +246,6 @@ final class SerpApiTests: XCTestCase {
     }
 
     func testCancellationErrorCase() {
-        // Test that SerpApiError has a cancellationError case
         let error = SerpApiError.cancellationError
         XCTAssertEqual(error.errorDescription, "Request was cancelled")
     }
@@ -254,5 +253,103 @@ final class SerpApiTests: XCTestCase {
     func testCancellationErrorDescription() {
         let error = SerpApiError.cancellationError
         XCTAssertEqual(error.errorDescription, "Request was cancelled")
+    }
+
+    // MARK: - Retry / Backoff
+
+    func testRetryConfigDefaults() {
+        let client = SerpApiClient()
+        XCTAssertEqual(client.maxRetries, 3)
+        XCTAssertEqual(client.retryBaseDelay, 0.5)
+        XCTAssertEqual(client.retryMaxDelay, 8.0)
+    }
+
+    func testRetryConfigCustom() {
+        let client = SerpApiClient(params: [
+            "max_retries": "5",
+            "retry_base_delay": "1.5",
+            "retry_max_delay": "30"
+        ])
+        XCTAssertEqual(client.maxRetries, 5)
+        XCTAssertEqual(client.retryBaseDelay, 1.5)
+        XCTAssertEqual(client.retryMaxDelay, 30)
+
+        // Retry config is client-side only and must not leak into outgoing query params
+        XCTAssertNil(client.params["max_retries"])
+        XCTAssertNil(client.params["retry_base_delay"])
+        XCTAssertNil(client.params["retry_max_delay"])
+    }
+
+    func testRetryConfigDisabledAndNegativeClamped() {
+        XCTAssertEqual(SerpApiClient(params: ["max_retries": "0"]).maxRetries, 0)
+        // Negative values are clamped to zero
+        XCTAssertEqual(SerpApiClient(params: ["max_retries": "-5"]).maxRetries, 0)
+    }
+
+    func testIsRetryableStatus() {
+        for code in [429, 500, 502, 503, 504] {
+            XCTAssertTrue(SerpApiClient.isRetryable(status: code), "\(code) should be retryable")
+        }
+        for code in [200, 400, 401, 403, 404] {
+            XCTAssertFalse(SerpApiClient.isRetryable(status: code), "\(code) should not be retryable")
+        }
+    }
+
+    func testIsRetryableURLError() {
+        for code: URLError.Code in [.timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed] {
+            XCTAssertTrue(SerpApiClient.isRetryable(urlError: URLError(code)))
+        }
+        // Cancellation must never be retried
+        XCTAssertFalse(SerpApiClient.isRetryable(urlError: URLError(.cancelled)))
+        XCTAssertFalse(SerpApiClient.isRetryable(urlError: URLError(.badURL)))
+    }
+
+    func testBackoffDelayWithinBounds() {
+        let base = 0.5
+        let maxDelay = 8.0
+        for attempt in 0..<6 {
+            let delay = SerpApiClient.backoffDelay(attempt: attempt, base: base, max: maxDelay)
+            let expectedCap = Swift.min(maxDelay, base * pow(2.0, Double(attempt)))
+            XCTAssertGreaterThanOrEqual(delay, 0)
+            XCTAssertLessThanOrEqual(delay, expectedCap)
+        }
+    }
+
+    func testBackoffDelayCappedAtMax() {
+        // A large attempt index must never exceed the configured ceiling
+        for _ in 0..<50 {
+            let delay = SerpApiClient.backoffDelay(attempt: 20, base: 0.5, max: 8.0)
+            XCTAssertLessThanOrEqual(delay, 8.0)
+        }
+    }
+
+    func testBackoffDelayZeroBaseIsZero() {
+        XCTAssertEqual(SerpApiClient.backoffDelay(attempt: 3, base: 0, max: 8.0), 0)
+    }
+
+    func testParseRetryAfterSeconds() {
+        XCTAssertEqual(SerpApiClient.parseRetryAfter("5"), 5)
+        XCTAssertEqual(SerpApiClient.parseRetryAfter("  10  "), 10)
+        XCTAssertEqual(SerpApiClient.parseRetryAfter("0"), 0)
+        // Negative delta clamps to zero
+        XCTAssertEqual(SerpApiClient.parseRetryAfter("-5"), 0)
+    }
+
+    func testParseRetryAfterHTTPDate() {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        let header = formatter.string(from: Date().addingTimeInterval(120))
+        let parsed = SerpApiClient.parseRetryAfter(header)
+        XCTAssertNotNil(parsed)
+        // ~120s minus a tiny elapsed amount
+        XCTAssertGreaterThan(parsed ?? 0, 100)
+        XCTAssertLessThanOrEqual(parsed ?? 0, 120)
+    }
+
+    func testParseRetryAfterInvalid() {
+        XCTAssertNil(SerpApiClient.parseRetryAfter("not-a-date"))
+        XCTAssertNil(SerpApiClient.parseRetryAfter(""))
     }
 }
