@@ -20,11 +20,19 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "SerpApi"
+            name: "SerpApi",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+                .enableExperimentalFeature("StrictConcurrency"),
+            ]
         ),
         .testTarget(
             name: "SerpApiTests",
-            dependencies: ["SerpApi"]
+            dependencies: ["SerpApi"],
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+                .enableExperimentalFeature("StrictConcurrency"),
+            ]
         ),
     ]
 )
