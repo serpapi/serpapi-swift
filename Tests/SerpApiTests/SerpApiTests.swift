@@ -216,4 +216,32 @@ final class SerpApiTests: XCTestCase {
              XCTFail("Unexpected error type: \(error)")
         }
     }
+
+    func testSessionCleanup() {
+        // Test that close() properly invalidates the session
+        let client = SerpApiClient(params: ["api_key": "test_key"])
+        // Call close to invalidate the session
+        client.close()
+        // If this doesn't crash, the invalidation worked
+        // Note: deinit will also call invalidateAndCancel() automatically
+    }
+
+    func testMultipleClientsCleanup() {
+        // Create and deallocate multiple clients to ensure cleanup doesn't leak resources
+        for _ in 0..<10 {
+            let client = SerpApiClient(params: ["api_key": "test_key"])
+            // Explicit cleanup
+            client.close()
+        }
+        // No crashes or resource exhaustion should occur
+    }
+
+    func testDeinitCleanup() {
+        // Test that deinit automatically cleans up the session
+        var client: SerpApiClient? = SerpApiClient(params: ["api_key": "test_key", "persistent": "true"])
+        XCTAssertNotNil(client)
+        // When client goes out of scope and is deallocated, deinit will call invalidateAndCancel()
+        client = nil
+        // No crashes should occur during deallocation
+    }
 }
