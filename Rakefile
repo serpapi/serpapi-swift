@@ -5,7 +5,7 @@ desc "run out of box testing using the local build"
 task oobt: %i[check build demo]
 
 desc "execute all the steps"
-task default: %i[check dependency version build test oobt]
+task default: %i[check dependency version lint build test oobt]
 
 desc 'install project dependencies'
 task :dependency do
@@ -73,7 +73,7 @@ desc 'run linting'
 task :lint do
   if which('swiftlint')
     ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
-    sh 'swiftlint'
+    sh 'swiftlint lint --strict'
   else
     puts 'swiftlint not found, skipping lint'
   end

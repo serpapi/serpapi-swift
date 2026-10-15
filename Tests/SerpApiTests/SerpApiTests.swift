@@ -77,15 +77,26 @@ final class SerpApiTests: XCTestCase {
         try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         
         let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
-        let html = try await client.html(params: ["q": "Coffee"])
-        
-        XCTAssertFalse(html.isEmpty)
-        // Check for common HTML tags instead of strict doctype
-        // Some engines might return partial HTML or just text depending on query/error
-        // But for a successful google search it should be substantial
-        XCTAssertGreaterThan(html.count, 100)
+        let html = try await client.html(params: ["q": "coffee"])
+
+        // a JSON body would also pass a length check, so assert actual HTML content
+        XCTAssertTrue(html.contains("<html"), "Expected HTML document")
+        XCTAssertTrue(html.contains("</html>"), "Expected HTML document")
+        XCTAssertTrue(html.contains("coffee"), "Expected query in HTML")
     }
-    
+
+    func testMdSearch() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
+        let md = try await client.md(params: ["q": "coffee"])
+
+        // the Markdown output starts with a YAML frontmatter
+        XCTAssertTrue(md.hasPrefix("---\nsearch_metadata:"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains("status: Success"))
+        XCTAssertTrue(md.contains("q: coffee"))
+    }
+
     func testLocation() async throws {
         try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         
@@ -130,6 +141,26 @@ final class SerpApiTests: XCTestCase {
         }
         
         XCTAssertNotNil(archiveDict["search_metadata"])
+    }
+
+    func testSearchArchiveMd() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
+        let search = try await client.search(params: ["q": "coffee"])
+        guard let metadata = search["search_metadata"] as? [String: Any],
+              let searchID = metadata["id"] as? String else {
+            XCTFail("Could not get search ID")
+            return
+        }
+
+        // search in archive as Markdown
+        guard let md = try await client.searchArchive(searchID: searchID, format: "md") as? String else {
+            XCTFail("Archive result is not a string")
+            return
+        }
+        XCTAssertTrue(md.hasPrefix("---\nsearch_metadata:"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains(searchID))
     }
     
     func testInvalidKey() async {
@@ -190,7 +221,7 @@ final class SerpApiTests: XCTestCase {
         } catch let error as SerpApiError {
             switch error {
             case .invalidDecoder(let msg):
-                XCTAssertEqual(msg, "format must be json or html")
+                XCTAssertEqual(msg, "format must be json, html or md")
             default:
                 XCTFail("Unexpected error type: \(error)")
             }
@@ -204,6 +235,24 @@ final class SerpApiTests: XCTestCase {
         let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
         do {
             _ = try await client.html(params: ["q": "Coffee"])
+            XCTFail("Should fail with invalid key")
+        } catch let error as SerpApiError {
+            switch error {
+            case .requestFailed(let msg):
+                XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+            default:
+                XCTFail("Unexpected error type: \(error)")
+            }
+        } catch {
+             XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testMdError() async {
+        // Trigger an error in Markdown mode (e.g. 401 with invalid key)
+        let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
+        do {
+            _ = try await client.md(params: ["q": "Coffee"])
             XCTFail("Should fail with invalid key")
         } catch let error as SerpApiError {
             switch error {

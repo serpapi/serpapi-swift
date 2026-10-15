@@ -1,6 +1,6 @@
 # Demo
 
-A command-line app that exercises all five public SerpApi methods in sequence.
+A command-line app that exercises all six public SerpApi methods in sequence.
 
 ## Output
 
@@ -14,19 +14,22 @@ SerpApi Swift Demo
    Link: https://en.wikipedia.org/wiki/Coffee
 
 2. HTML Search for 'Coffee'...
-   HTML received (length: 47109 chars)
+   HTML received (length: 1648269 chars)
 
-3. Location API for 'Austin'...
+3. Markdown Search for 'Coffee'...
+   Markdown received (length: 39950 chars)
+
+4. Location API for 'Austin'...
    Found 3 locations:
    - Austin (ID: 585069b8ee19ad271e9ba949)
    - Austin (ID: 585069b1ee19ad271e9b8fe2)
    - Austin (ID: 585069afee19ad271e9b8550)
 
-4. Account API...
+5. Account API...
    Account Email: your@email.com
    Plan: Free Plan
 
-5. Async Search Submission...
+6. Async Search Submission...
    Submitted Async Search. ID: 6a26392bd355cc383c48938e
    (Waiting 2 seconds...)
    Fetching from Archive...
@@ -39,9 +42,10 @@ Demo finished.
 
 1. **Search** — Google search with location (`q=Coffee`, `location=Austin, TX`)
 2. **HTML search** — raw HTML output from the search engine
-3. **Location API** — resolve location names to SerpApi location IDs
-4. **Account API** — retrieve account info and plan details
-5. **Async / Archive API** — submit a search with `async=true` and fetch results from the archive
+3. **Markdown search** — search results converted to Markdown, ready for LLMs / RAG pipelines
+4. **Location API** — resolve location names to SerpApi location IDs
+5. **Account API** — retrieve account info and plan details
+6. **Async / Archive API** — submit a search with `async=true` and fetch results from the archive
 
 ## Run
 

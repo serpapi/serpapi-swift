@@ -4,7 +4,7 @@ Two example apps demonstrating the SerpApi Swift library.
 
 | Example | Type | Description |
 |---------|------|-------------|
-| [Demo](Demo/) | CLI (macOS) | Exercises all five public API methods sequentially |
+| [Demo](Demo/) | CLI (macOS) | Exercises all six public API methods sequentially |
 | [EventsDemo](EventsDemo/) | SwiftUI GUI (macOS / iOS) | Browse local events using the Google Events engine |
 
 Each example is a standalone Swift package that depends on the local library via `path: "../../"`.

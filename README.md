@@ -25,7 +25,7 @@ Add the following to your `Package.swift` dependencies:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/serpapi/serpapi-swift", from: "1.0.0")
+    .package(url: "https://github.com/serpapi/serpapi-swift", from: "1.1.0")
 ]
 ```
 
@@ -117,6 +117,15 @@ let html = try await client.html(params: ["q": "Coffee"])
 print(html) // "<!doctype html>..."
 ```
 
+### Markdown Output
+
+Get the search results converted to Markdown — handy for feeding results directly into LLMs / RAG pipelines.
+
+```swift
+let md = try await client.md(params: ["q": "Coffee"])
+print(md)
+```
+
 ## APIs Supported
 
 ### Location API
@@ -134,6 +143,9 @@ Retrieve past search results (free of charge).
 
 ```swift
 let results = try await client.searchArchive(searchID: "SEARCH_ID")
+
+// or as HTML / Markdown
+let md = try await client.searchArchive(searchID: "SEARCH_ID", format: "md") as? String
 ```
 
 ### Account API

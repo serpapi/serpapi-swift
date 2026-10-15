@@ -28,12 +28,14 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     private static let paramSource = "source"
     private static let paramApiKey = "api_key"
     private static let paramEngine = "engine"
+    private static let paramOutput = "output"
     private static let endpointSearch = "/search"
     private static let endpointLocations = "/locations.json"
     private static let endpointAccount = "/account"
     private static let endpointSearches = "/searches"
     private static let formatJson = "json"
     private static let formatHtml = "html"
+    private static let formatMd = "md"
     private static let httpStatusCodeSuccess = 200
     private static let headerRetryAfter = "Retry-After"
     /// HTTP status codes that are considered transient and worth retrying.
@@ -130,13 +132,32 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     /// - Parameter params: includes engine, api_key, search fields and more.
     /// - Returns: raw HTML search results directly from the search engine
     public func html(params: [String: String] = [:]) async throws -> String {
-        let result = try await get(endpoint: Self.endpointSearch, decoder: .html, params: params)
+        var htmlParams = params
+        htmlParams[Self.paramOutput] = Self.formatHtml
+        let result = try await get(endpoint: Self.endpointSearch, decoder: .html, params: htmlParams)
         guard let html = result as? String else {
             throw SerpApiError.jsonParseError("Expected string but got \(type(of: result))")
         }
         return html
     }
-    
+
+    /// Markdown search performs a search using SerpApi.com
+    ///
+    /// The output is the search results converted to Markdown.
+    /// It is useful for feeding search results directly into LLMs / RAG pipelines.
+    ///
+    /// - Parameter params: includes engine, api_key, search fields and more.
+    /// - Returns: Markdown search results
+    public func md(params: [String: String] = [:]) async throws -> String {
+        var mdParams = params
+        mdParams[Self.paramOutput] = Self.formatMd
+        let result = try await get(endpoint: Self.endpointSearch, decoder: .html, params: mdParams)
+        guard let md = result as? String else {
+            throw SerpApiError.jsonParseError("Expected string but got \(type(of: result))")
+        }
+        return md
+    }
+
     /// Get location using Location API
     ///
     /// Doc: https://serpapi.com/locations-api
@@ -157,11 +178,11 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     ///
     /// - Parameters:
     ///   - searchID: from original search `results["search_metadata"]["id"]`
-    ///   - format: "json" or "html" [default: "json"]
-    /// - Returns: raw HTML or JSON Dictionary
+    ///   - format: "json", "html" or "md" [default: "json"]
+    /// - Returns: JSON Dictionary, or raw HTML / Markdown String
     public func searchArchive(searchID: String, format: String = "json") async throws -> Any {
-        guard format == Self.formatJson || format == Self.formatHtml else {
-            throw SerpApiError.invalidDecoder("format must be \(Self.formatJson) or \(Self.formatHtml)")
+        guard [Self.formatJson, Self.formatHtml, Self.formatMd].contains(format) else {
+            throw SerpApiError.invalidDecoder("format must be \(Self.formatJson), \(Self.formatHtml) or \(Self.formatMd)")
         }
         let decoder: DecoderType = format == Self.formatJson ? .json : .html
         return try await get(endpoint: "\(Self.endpointSearches)/\(searchID).\(format)", decoder: decoder)
@@ -290,7 +311,6 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
             try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
     }
-
 
     private func query(params: [String: String]) -> [String: String] {
         var q = self.params
