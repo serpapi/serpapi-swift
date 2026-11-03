@@ -92,9 +92,21 @@ final class SerpApiTests: XCTestCase {
         let md = try await client.md(params: ["q": "coffee"])
 
         // the Markdown output starts with a YAML frontmatter
-        XCTAssertTrue(md.hasPrefix("---\nsearch_metadata:"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.hasPrefix("---\n"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains("search_metadata:"), "Expected search_metadata in frontmatter")
         XCTAssertTrue(md.contains("status: Success"))
         XCTAssertTrue(md.contains("q: coffee"))
+    }
+
+    func testSearchForcesJsonOutput() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        // a default `output` must not leak into search(), which always asks for JSON
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google", "output": "html"])
+        let results = try await client.search(params: ["q": "coffee"])
+
+        XCTAssertNotNil(results["search_metadata"])
+        XCTAssertEqual(client.params["output"], "html")
     }
 
     func testLocation() async throws {
@@ -159,10 +171,33 @@ final class SerpApiTests: XCTestCase {
             XCTFail("Archive result is not a string")
             return
         }
-        XCTAssertTrue(md.hasPrefix("---\nsearch_metadata:"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.hasPrefix("---\n"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains("search_metadata:"), "Expected search_metadata in frontmatter")
         XCTAssertTrue(md.contains(searchID))
     }
     
+    func testSearchArchiveEscapesID() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey])
+        // an unescaped "../account" would resolve to the Account API
+        do {
+            _ = try await client.searchArchive(searchID: "../account")
+            XCTFail("Should not resolve outside /searches")
+        } catch SerpApiError.requestFailed(let msg) {
+            XCTAssertTrue(msg.contains("404"), "Unexpected error message: \(msg)")
+            XCTAssertTrue(msg.contains("/searches/..%2Faccount.json"), "Unexpected error message: \(msg)")
+        }
+        // an unescaped "?" would turn the rest of the id into query params
+        do {
+            _ = try await client.searchArchive(searchID: "abc?x=1", format: "md")
+            XCTFail("Should not find a search")
+        } catch SerpApiError.requestFailed(let msg) {
+            XCTAssertTrue(msg.contains("Search not found"), "Unexpected error message: \(msg)")
+            XCTAssertTrue(msg.contains("/searches/abc%3Fx%3D1.md"), "Unexpected error message: \(msg)")
+        }
+    }
+
     func testInvalidKey() async {
         let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
         
@@ -187,7 +222,8 @@ final class SerpApiTests: XCTestCase {
             .invalidParams("param error"),
             .requestFailed("request failed"),
             .jsonParseError("parse error"),
-            .invalidDecoder("decoder error")
+            .invalidDecoder("decoder error"),
+            .htmlParseError("text error")
         ]
         
         for error in errors {
@@ -240,6 +276,8 @@ final class SerpApiTests: XCTestCase {
             switch error {
             case .requestFailed(let msg):
                 XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+                XCTAssertTrue(msg.contains("Invalid API key"), "Should surface the SerpApi error: \(msg)")
+                XCTAssertFalse(msg.contains("invalid_key"), "Should redact the API key: \(msg)")
             default:
                 XCTFail("Unexpected error type: \(error)")
             }
@@ -258,6 +296,8 @@ final class SerpApiTests: XCTestCase {
             switch error {
             case .requestFailed(let msg):
                 XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+                XCTAssertTrue(msg.contains("Invalid API key"), "Should surface the SerpApi error: \(msg)")
+                XCTAssertFalse(msg.contains("invalid_key"), "Should redact the API key: \(msg)")
             default:
                 XCTFail("Unexpected error type: \(error)")
             }

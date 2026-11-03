@@ -9,6 +9,8 @@ import FoundationNetworking
 /// * Async non-blocking search (via Swift Concurrency)
 /// * Persistent HTTP connection (via URLSession)
 /// * Search API
+/// * HTML output (raw search engine HTML)
+/// * Markdown output (for LLM / RAG pipelines)
 /// * Location API
 /// * Account API
 /// * Search Archive API
@@ -38,6 +40,14 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     private static let formatMd = "md"
     private static let httpStatusCodeSuccess = 200
     private static let headerRetryAfter = "Retry-After"
+    private static let headerContentType = "Content-Type"
+    private static let contentTypeJson = "application/json"
+    /// Maximum number of characters of a non-JSON error body included in error messages.
+    private static let errorBodyPreviewLength = 200
+    /// RFC 3986 unreserved characters: everything else in a path segment is percent-encoded.
+    private static let pathSegmentAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
     /// HTTP status codes that are considered transient and worth retrying.
     private static let retryableStatusCodes: Set<Int> = [429, 500, 502, 503, 504]
 
@@ -82,7 +92,13 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     ///   - `max_retries`: [String] number of automatic retries for transient failures (HTTP 429/5xx, network blips) [default: "3"]
     ///   - `retry_base_delay`: [String] base delay in seconds for exponential backoff [default: "0.5"]
     ///   - `retry_max_delay`: [String] maximum delay in seconds for a single backoff wait [default: "8.0"]
-    public init(params: [String: String] = [:]) {
+    public convenience init(params: [String: String] = [:]) {
+        self.init(params: params, protocolClasses: nil)
+    }
+
+    /// Designated initializer. `protocolClasses` replaces the session's URL protocol handlers,
+    /// which lets tests stub the network layer.
+    init(params: [String: String], protocolClasses: [AnyClass]?) {
         self.timeout = TimeInterval(params[Self.paramTimeout] ?? String(Self.defaultTimeout)) ?? Self.defaultTimeout
         self.persistent = (params[Self.paramPersistent] ?? (Self.defaultPersistent ? "true" : "false")) == "true"
         self.maxRetries = max(0, params[Self.paramMaxRetries].flatMap(Int.init) ?? Self.defaultMaxRetries)
@@ -104,6 +120,9 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
         
         let configuration = self.persistent ? URLSessionConfiguration.default : URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = self.timeout
+        if let protocolClasses {
+            configuration.protocolClasses = protocolClasses
+        }
         // URLSession handles persistent connections by default via its connection pool.
         // When `persistent` is false, an ephemeral configuration avoids persisting caches/cookies.
         self.session = URLSession(configuration: configuration)
@@ -115,9 +134,12 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     ///
     /// - Parameter params: includes engine, api_key, search fields and more.
     ///   This overrides the default params provided to the constructor.
+    ///   `output` is always sent as `json`.
     /// - Returns: search results formatted as a Dictionary
     public func search(params: [String: String] = [:]) async throws -> [String: Any] {
-        let result = try await get(endpoint: Self.endpointSearch, decoder: .json, params: params)
+        var jsonParams = params
+        jsonParams[Self.paramOutput] = Self.formatJson
+        let result = try await get(endpoint: Self.endpointSearch, decoder: .json, params: jsonParams)
         guard let dict = result as? [String: Any] else {
             throw SerpApiError.jsonParseError("Expected dictionary but got \(type(of: result))")
         }
@@ -134,7 +156,7 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     public func html(params: [String: String] = [:]) async throws -> String {
         var htmlParams = params
         htmlParams[Self.paramOutput] = Self.formatHtml
-        let result = try await get(endpoint: Self.endpointSearch, decoder: .html, params: htmlParams)
+        let result = try await get(endpoint: Self.endpointSearch, decoder: .text, params: htmlParams)
         guard let html = result as? String else {
             throw SerpApiError.jsonParseError("Expected string but got \(type(of: result))")
         }
@@ -151,7 +173,7 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     public func md(params: [String: String] = [:]) async throws -> String {
         var mdParams = params
         mdParams[Self.paramOutput] = Self.formatMd
-        let result = try await get(endpoint: Self.endpointSearch, decoder: .html, params: mdParams)
+        let result = try await get(endpoint: Self.endpointSearch, decoder: .text, params: mdParams)
         guard let md = result as? String else {
             throw SerpApiError.jsonParseError("Expected string but got \(type(of: result))")
         }
@@ -177,15 +199,19 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     /// Doc: https://serpapi.com/search-archive-api
     ///
     /// - Parameters:
-    ///   - searchID: from original search `results["search_metadata"]["id"]`
+    ///   - searchID: from original search `results["search_metadata"]["id"]`.
+    ///     It is percent-encoded as a single path segment.
     ///   - format: "json", "html" or "md" [default: "json"]
     /// - Returns: JSON Dictionary, or raw HTML / Markdown String
     public func searchArchive(searchID: String, format: String = "json") async throws -> Any {
         guard [Self.formatJson, Self.formatHtml, Self.formatMd].contains(format) else {
             throw SerpApiError.invalidDecoder("format must be \(Self.formatJson), \(Self.formatHtml) or \(Self.formatMd)")
         }
-        let decoder: DecoderType = format == Self.formatJson ? .json : .html
-        return try await get(endpoint: "\(Self.endpointSearches)/\(searchID).\(format)", decoder: decoder)
+        guard let escapedID = searchID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) else {
+            throw SerpApiError.invalidParams("searchID cannot be percent-encoded: \(searchID)")
+        }
+        let decoder: DecoderType = format == Self.formatJson ? .json : .text
+        return try await get(endpoint: "\(Self.endpointSearches)/\(escapedID).\(format)", decoder: decoder)
     }
     
     /// Get account information using Account API
@@ -240,8 +266,10 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     }
     
     private enum DecoderType {
+        /// JSON body decoded with `JSONSerialization`
         case json
-        case html
+        /// UTF-8 text body (HTML or Markdown)
+        case text
     }
 
     static func redactedURLString(_ url: URL) -> String {
@@ -369,66 +397,72 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
                 continue
             }
 
-            return try decode(data: data, status: status, decoder: decoder, redactedURL: redactedURL)
+            return try decode(data: data, response: httpResponse, decoder: decoder, redactedURL: redactedURL)
         }
     }
 
-    private func decode(data: Data, status: Int, decoder: DecoderType, redactedURL: String) throws -> Any {
+    private func decode(data: Data, response: HTTPURLResponse, decoder: DecoderType, redactedURL: String) throws -> Any {
+        let status = response.statusCode
+        guard status == Self.httpStatusCodeSuccess else {
+            throw Self.httpError(data: data, status: status, redactedURL: redactedURL)
+        }
+
         switch decoder {
         case .json:
-            if status != Self.httpStatusCodeSuccess {
-                do {
-                    let json = try JSONSerialization.jsonObject(with: data, options: [])
-                    if let dict = json as? [String: Any] {
-                        if let error = dict["error"] as? String {
-                            throw SerpApiError.requestFailed(
-                                "HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(status)"
-                            )
-                        }
-                        throw SerpApiError.requestFailed(
-                            "HTTP request failed with response status: \(status) response: \(dict) on get url: \(redactedURL)"
-                        )
-                    }
-                    throw SerpApiError.requestFailed(
-                        "HTTP request failed with response status: \(status) on get url: \(redactedURL)"
-                    )
-                } catch is CancellationError {
-                    throw SerpApiError.cancellationError
-                } catch let error as SerpApiError {
-                    throw error
-                } catch {
-                    let body = String(data: data, encoding: .utf8)?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? "<non-utf8 body>"
-                    let preview = String(body.prefix(500))
-                    throw SerpApiError.requestFailed(
-                        "HTTP request failed with response status: \(status) body: \(preview) on get url: \(redactedURL)"
-                    )
-                }
-            }
-
             do {
-                let json = try JSONSerialization.jsonObject(with: data, options: [])
-                return json
-            } catch is CancellationError {
-                throw SerpApiError.cancellationError
+                return try JSONSerialization.jsonObject(with: data, options: [])
             } catch {
-                if let decodingError = error as? SerpApiError {
-                    throw decodingError
-                }
                 throw SerpApiError.jsonParseError(
                     "JSON parse error: \(error.localizedDescription) on get url: \(redactedURL), response status: \(status)"
                 )
             }
-        case .html:
-            if status != Self.httpStatusCodeSuccess {
+        case .text:
+            // SerpApi reports errors as JSON even when HTML or Markdown output was requested.
+            if Self.isJSON(response), let error = Self.apiErrorMessage(data) {
                 throw SerpApiError.requestFailed(
-                    "HTTP request failed with response status: \(status) on get url: \(redactedURL)"
+                    "HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(status)"
                 )
             }
-            guard let html = String(data: data, encoding: .utf8) else {
-                throw SerpApiError.htmlParseError("Failed to decode HTML as UTF-8 from url: \(redactedURL)")
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw SerpApiError.htmlParseError("Failed to decode response body as UTF-8 from url: \(redactedURL)")
             }
-            return html
+            return text
         }
+    }
+
+    /// Whether the response declares a JSON body.
+    private static func isJSON(_ response: HTTPURLResponse) -> Bool {
+        response.value(forHTTPHeaderField: headerContentType)?
+            .lowercased()
+            .hasPrefix(contentTypeJson) ?? false
+    }
+
+    /// The `error` message of a SerpApi JSON error body, if any.
+    private static func apiErrorMessage(_ data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: []),
+              let dict = json as? [String: Any] else {
+            return nil
+        }
+        return dict["error"] as? String
+    }
+
+    /// Error for a non-success HTTP response, whatever output format was requested.
+    ///
+    /// Includes SerpApi's JSON `error` message when present, otherwise a truncated body preview.
+    private static func httpError(data: Data, status: Int, redactedURL: String) -> SerpApiError {
+        if let error = apiErrorMessage(data) {
+            return .requestFailed(
+                "HTTP request failed with error: \(error) from url: \(redactedURL), response status: \(status)"
+            )
+        }
+        let body = (String(bytes: data, encoding: .utf8) ?? "<non-UTF-8 body>")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else {
+            return .requestFailed("HTTP request failed with response status: \(status) on get url: \(redactedURL)")
+        }
+        let preview = body.count > errorBodyPreviewLength ? "\(body.prefix(errorBodyPreviewLength))..." : body
+        return .requestFailed(
+            "HTTP request failed with response status: \(status) body: \(preview) on get url: \(redactedURL)"
+        )
     }
 }
