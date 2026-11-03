@@ -44,9 +44,18 @@ struct Demo {
             print("   Error: \(error.localizedDescription)")
         }
         
-        // 3. Location API
+        // 3. Markdown Search
         do {
-            print("\n3. Location API for 'Austin'...")
+            print("\n3. Markdown Search for 'Coffee'...")
+            let md = try await client.md(params: ["q": "Coffee"])
+            print("   Markdown received (length: \(md.count) chars)")
+        } catch {
+            print("   Error: \(error.localizedDescription)")
+        }
+
+        // 4. Location API
+        do {
+            print("\n4. Location API for 'Austin'...")
             let locations = try await client.location(params: ["q": "Austin", "limit": "3"])
             print("   Found \(locations.count) locations:")
             for loc in locations {
@@ -55,21 +64,21 @@ struct Demo {
         } catch {
             print("   Error: \(error.localizedDescription)")
         }
-        
-        // 4. Account API
+
+        // 5. Account API
         do {
-            print("\n4. Account API...")
+            print("\n5. Account API...")
             let account = try await client.account()
             print("   Account Email: \(account["account_email"] ?? "N/A")")
             print("   Plan: \(account["plan_name"] ?? "N/A")")
         } catch {
             print("   Error: \(error.localizedDescription)")
         }
-        
-        // 5. Async / Archive API
+
+        // 6. Async / Archive API
         // Note: Real async submission requires params["async"] = "true"
         do {
-            print("\n5. Async Search Submission...")
+            print("\n6. Async Search Submission...")
             let asyncParams = ["q": "Tesla", "location": "Austin, TX", "async": "true"]
             let asyncResult = try await client.search(params: asyncParams)
             

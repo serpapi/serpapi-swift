@@ -13,7 +13,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -43,36 +43,46 @@ jobs:
       - name: Build Demo
         run: swift build --package-path Examples/Demo --product Demo
       
+      # Integration tests skip themselves (XCTSkipIf) when SERPAPI_KEY is not available, e.g. on forks.
       - name: Test
         run: swift test
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
-        continue-on-error: true
 
+  # A separate job, so a lint failure never hides the build and test results.
   lint:
     name: Lint
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
+
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: 'latest'
-      
-      - name: Run SwiftLint
-        uses: norio-nomura/action-swiftlint@3.2.1
-        continue-on-error: true
-        with:
-          args: --strict
+
+      # norio-nomura/action-swiftlint is a Docker action and cannot run on macOS runners.
+      # SwiftLint is pinned so new upstream rules don't break CI unexpectedly, and its
+      # SHA-256 is the release asset digest, so a replaced binary fails the job.
+      - name: Lint
+        env:
+          SWIFTLINT_VERSION: 0.65.1
+          SWIFTLINT_SHA256: c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+          echo "$SWIFTLINT_SHA256  $RUNNER_TEMP/swiftlint.zip" | shasum -a 256 -c
+          unzip -q "$RUNNER_TEMP/swiftlint.zip" -d "$RUNNER_TEMP/swiftlint"
+          "$RUNNER_TEMP/swiftlint/swiftlint" version
+          "$RUNNER_TEMP/swiftlint/swiftlint" lint --strict
 
   code-coverage:
     name: Code Coverage
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -83,19 +93,12 @@ jobs:
         run: swift test --enable-code-coverage
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
-        continue-on-error: true
-      
+
+      # SwiftPM names the test bundle after the package (SerpApiPackageTests), not the test target.
       - name: Generate Coverage Report
         run: |
           bin_path=$(swift build --show-bin-path)
-          xctest_path=$(find "$bin_path" -name "*.xctest" -type d | head -1)
-          if [ -n "$xctest_path" ]; then
-            llvm_cov=$(xcrun -f llvm-cov 2>/dev/null || echo "")
-            if [ -n "$llvm_cov" ]; then
-              $llvm_cov report "$xctest_path/Contents/MacOS/SerpApiTests" \
-                -instr-profile=.build/debug/codecov/default.profdata \
-                -ignore-filename-regex='.build|Tests' || true
-            fi
-          fi
-        continue-on-error: true
-
+          xcrun llvm-cov report \
+            "$bin_path/SerpApiPackageTests.xctest/Contents/MacOS/SerpApiPackageTests" \
+            -instr-profile="$bin_path/codecov/default.profdata" \
+            -ignore-filename-regex='.build|Tests'

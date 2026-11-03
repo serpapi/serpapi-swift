@@ -105,7 +105,7 @@ struct EventRowView: View {
             if let imageURL = event.image, let url = URL(string: imageURL) {
                 AsyncImage(url: url) { image in
                     image.resizable()
-                         .aspectRatio(contentMode: .fill)
+                         .scaledToFill()
                          .frame(height: 150)
                          .clipped()
                          .cornerRadius(8)

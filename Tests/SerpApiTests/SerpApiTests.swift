@@ -3,11 +3,14 @@ import XCTest
 
 final class SerpApiTests: XCTestCase {
     
+    /// `SERPAPI_KEY`, or nil when unset or empty (GitHub sets it empty for fork and Dependabot PRs).
+    /// Every test that calls serpapi.com skips without it.
     var apiKey: String!
-    
+
     override func setUp() {
         super.setUp()
-        apiKey = ProcessInfo.processInfo.environment["SERPAPI_KEY"]
+        let key = ProcessInfo.processInfo.environment["SERPAPI_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        apiKey = (key?.isEmpty ?? true) ? nil : key
     }
     
     func testInitialization() {
@@ -77,15 +80,38 @@ final class SerpApiTests: XCTestCase {
         try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         
         let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
-        let html = try await client.html(params: ["q": "Coffee"])
-        
-        XCTAssertFalse(html.isEmpty)
-        // Check for common HTML tags instead of strict doctype
-        // Some engines might return partial HTML or just text depending on query/error
-        // But for a successful google search it should be substantial
-        XCTAssertGreaterThan(html.count, 100)
+        let html = try await client.html(params: ["q": "coffee"])
+
+        // a JSON body would also pass a length check, so assert actual HTML content
+        XCTAssertTrue(html.contains("<html"), "Expected HTML document")
+        XCTAssertTrue(html.contains("</html>"), "Expected HTML document")
+        XCTAssertTrue(html.contains("coffee"), "Expected query in HTML")
     }
-    
+
+    func testMdSearch() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
+        let md = try await client.md(params: ["q": "coffee"])
+
+        // the Markdown output starts with a YAML frontmatter
+        XCTAssertTrue(md.hasPrefix("---\n"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains("search_metadata:"), "Expected search_metadata in frontmatter")
+        XCTAssertTrue(md.contains("status: Success"))
+        XCTAssertTrue(md.contains("q: coffee"))
+    }
+
+    func testSearchForcesJsonOutput() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        // a default `output` must not leak into search(), which always asks for JSON
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google", "output": "html"])
+        let results = try await client.search(params: ["q": "coffee"])
+
+        XCTAssertNotNil(results["search_metadata"])
+        XCTAssertEqual(client.params["output"], "html")
+    }
+
     func testLocation() async throws {
         try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         
@@ -131,8 +157,71 @@ final class SerpApiTests: XCTestCase {
         
         XCTAssertNotNil(archiveDict["search_metadata"])
     }
+
+    func testSearchArchiveMd() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google"])
+        let search = try await client.search(params: ["q": "coffee"])
+        guard let metadata = search["search_metadata"] as? [String: Any],
+              let searchID = metadata["id"] as? String else {
+            XCTFail("Could not get search ID")
+            return
+        }
+
+        // search in archive as Markdown
+        guard let md = try await client.searchArchive(searchID: searchID, format: "md") as? String else {
+            XCTFail("Archive result is not a string")
+            return
+        }
+        XCTAssertTrue(md.hasPrefix("---\n"), "Expected Markdown frontmatter")
+        XCTAssertTrue(md.contains("search_metadata:"), "Expected search_metadata in frontmatter")
+        XCTAssertTrue(md.contains(searchID))
+    }
     
-    func testInvalidKey() async {
+    func testSearchArchiveIgnoresDefaultOutput() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        // SerpApi honors `output` over the path extension, so a default `output` must not leak
+        let client = SerpApiClient(params: ["api_key": apiKey, "engine": "google", "output": "html"])
+        let search = try await client.search(params: ["q": "coffee"])
+        let metadata = try XCTUnwrap(search["search_metadata"] as? [String: Any])
+        let searchID = try XCTUnwrap(metadata["id"] as? String)
+
+        let json = try await client.searchArchive(searchID: searchID)
+        XCTAssertNotNil((json as? [String: Any])?["search_metadata"], "Expected JSON archive")
+
+        let archive = try await client.searchArchive(searchID: searchID, format: "md")
+        let md = try XCTUnwrap(archive as? String)
+        XCTAssertTrue(md.hasPrefix("---\n"), "Expected Markdown, got: \(md.prefix(80))")
+        XCTAssertFalse(md.contains("</html>"), "Expected Markdown, not HTML")
+    }
+
+    func testSearchArchiveEscapesID() async throws {
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+
+        let client = SerpApiClient(params: ["api_key": apiKey])
+        // an unescaped "../account" would resolve to the Account API
+        do {
+            _ = try await client.searchArchive(searchID: "../account")
+            XCTFail("Should not resolve outside /searches")
+        } catch SerpApiError.requestFailed(let msg) {
+            XCTAssertTrue(msg.contains("404"), "Unexpected error message: \(msg)")
+            XCTAssertTrue(msg.contains("/searches/..%2Faccount.json"), "Unexpected error message: \(msg)")
+        }
+        // an unescaped "?" would turn the rest of the id into query params
+        do {
+            _ = try await client.searchArchive(searchID: "abc?x=1", format: "md")
+            XCTFail("Should not find a search")
+        } catch SerpApiError.requestFailed(let msg) {
+            XCTAssertTrue(msg.contains("Search not found"), "Unexpected error message: \(msg)")
+            XCTAssertTrue(msg.contains("/searches/abc%3Fx%3D1.md"), "Unexpected error message: \(msg)")
+        }
+    }
+
+    func testInvalidKey() async throws {
+        // networked: offline equivalents live in RequestTests
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
         
         do {
@@ -156,12 +245,15 @@ final class SerpApiTests: XCTestCase {
             .invalidParams("param error"),
             .requestFailed("request failed"),
             .jsonParseError("parse error"),
-            .invalidDecoder("decoder error")
+            .invalidDecoder("decoder error"),
+            .htmlParseError("text error")
         ]
         
         for error in errors {
             XCTAssertFalse(error.localizedDescription.isEmpty)
         }
+        // shared by HTML and Markdown, so the text must not name a format
+        XCTAssertEqual(SerpApiError.htmlParseError("bad bytes").errorDescription, "Response decode error: bad bytes")
     }
     
     func testClientDescription() {
@@ -190,7 +282,7 @@ final class SerpApiTests: XCTestCase {
         } catch let error as SerpApiError {
             switch error {
             case .invalidDecoder(let msg):
-                XCTAssertEqual(msg, "format must be json or html")
+                XCTAssertEqual(msg, "format must be json, html or md")
             default:
                 XCTFail("Unexpected error type: \(error)")
             }
@@ -199,7 +291,9 @@ final class SerpApiTests: XCTestCase {
         }
     }
     
-    func testHtmlError() async {
+    func testHtmlError() async throws {
+        // networked: offline equivalents live in RequestTests
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
         // Trigger an error in HTML mode (e.g. 401 with invalid key)
         let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
         do {
@@ -209,6 +303,30 @@ final class SerpApiTests: XCTestCase {
             switch error {
             case .requestFailed(let msg):
                 XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+                XCTAssertTrue(msg.contains("Invalid API key"), "Should surface the SerpApi error: \(msg)")
+                XCTAssertFalse(msg.contains("invalid_key"), "Should redact the API key: \(msg)")
+            default:
+                XCTFail("Unexpected error type: \(error)")
+            }
+        } catch {
+             XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testMdError() async throws {
+        // networked: offline equivalents live in RequestTests
+        try XCTSkipIf(apiKey == nil, "SERPAPI_KEY not set")
+        // Trigger an error in Markdown mode (e.g. 401 with invalid key)
+        let client = SerpApiClient(params: ["api_key": "invalid_key", "engine": "google"])
+        do {
+            _ = try await client.md(params: ["q": "Coffee"])
+            XCTFail("Should fail with invalid key")
+        } catch let error as SerpApiError {
+            switch error {
+            case .requestFailed(let msg):
+                XCTAssertTrue(msg.contains("401"), "Should be a request failure with 401: \(msg)")
+                XCTAssertTrue(msg.contains("Invalid API key"), "Should surface the SerpApi error: \(msg)")
+                XCTAssertFalse(msg.contains("invalid_key"), "Should redact the API key: \(msg)")
             default:
                 XCTFail("Unexpected error type: \(error)")
             }
@@ -255,7 +373,11 @@ final class SerpApiTests: XCTestCase {
         XCTAssertEqual(error.errorDescription, "Request was cancelled")
     }
 
-    // MARK: - Retry / Backoff
+}
+
+// MARK: - Retry / Backoff
+
+extension SerpApiTests {
 
     func testRetryConfigDefaults() {
         let client = SerpApiClient()
