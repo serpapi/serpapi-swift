@@ -43,30 +43,18 @@ desc 'run tests with coverage'
 task :coverage do
   # Use main Xcode installation to find XCTest
   ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
-  
+
   sh 'swift test --enable-code-coverage'
-  # Find the coverage report path
   bin_path = `swift build --show-bin-path`.strip
-  
-  # The coverage data is usually in .build/debug/codecov/default.profdata
-  # We need to process it with llvm-cov
-  
-  # Try to find llvm-cov
-  llvm_cov = `xcrun -f llvm-cov 2>/dev/null`.strip
-  if llvm_cov.empty?
-    puts "llvm-cov not found. Please ensure Xcode command line tools are installed."
-  else
-    # Generate report
-    # Note: We need to target the test bundle executable
-    xctest_path = Dir.glob("#{bin_path}/*.xctest/Contents/MacOS/*").first || Dir.glob("#{bin_path}/*.xctest/*").first
-    
-    if xctest_path
-      puts "Generating coverage report..."
-      sh "#{llvm_cov} report #{xctest_path} -instr-profile=.build/debug/codecov/default.profdata -ignore-filename-regex='.build|Tests'"
-    else
-      puts "Could not find xctest binary for coverage report"
-    end
-  end
+  # SwiftPM names the test bundle after the package, not the test target
+  xctest_path = "#{bin_path}/SerpApiPackageTests.xctest/Contents/MacOS/SerpApiPackageTests"
+  profdata = "#{bin_path}/codecov/default.profdata"
+  abort "coverage: test binary not found at #{xctest_path}" unless File.exist?(xctest_path)
+
+  llvm_cov = `xcrun -f llvm-cov`.strip
+  abort 'coverage: llvm-cov not found, install the Xcode command line tools' if llvm_cov.empty?
+
+  sh "#{llvm_cov} report #{xctest_path} -instr-profile=#{profdata} -ignore-filename-regex='.build|Tests'"
 end
 
 desc 'run linting'
