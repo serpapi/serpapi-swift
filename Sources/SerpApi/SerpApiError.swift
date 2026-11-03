@@ -19,7 +19,8 @@ public enum SerpApiError: Error, LocalizedError {
         case .invalidDecoder(let message):
             return "Invalid decoder: \(message)"
         case .htmlParseError(let message):
-            return "HTML parse error: \(message)"
+            // The case name predates Markdown output; it covers any HTML or Markdown body decode failure.
+            return "Response decode error: \(message)"
         case .cancellationError:
             return "Request was cancelled"
         }

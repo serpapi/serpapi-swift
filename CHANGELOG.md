@@ -20,9 +20,12 @@ All notable changes to this project are documented in this file.
   The constructor params are not mutated.
 - `searchArchive(searchID:format:)` percent-encodes the search id as a single path segment,
   so characters such as `/`, `?` and `#` can no longer change the request path or query.
+- `searchArchive(searchID:format:)` sends `output=<format>`, so an `output` set in the constructor
+  no longer overrides the requested format (SerpApi honors `output` over the path extension).
 - `html()`, `md()` and archive HTML / Markdown raise `SerpApiError.requestFailed` when a 200 response
   is a JSON body carrying an `error` message, instead of returning that JSON as text.
 - Errors for non-2xx JSON responses without an `error` field show a truncated preview of the raw body.
+- `SerpApiError.htmlParseError` describes itself as `Response decode error: ...`, since it also covers Markdown.
 
 ### Internal
 

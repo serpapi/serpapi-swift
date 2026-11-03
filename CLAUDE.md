@@ -42,7 +42,9 @@ rake coverage   # test with coverage report (offline: env -u SERPAPI_KEY rake co
 rake tag        # create git tag from version in Version.swift
 ```
 
-Integration tests require `SERPAPI_KEY` env var; they are skipped automatically when it is absent.
+Integration tests require `SERPAPI_KEY` env var; they are skipped automatically when it is absent or empty
+(GitHub sets it empty for fork and Dependabot PRs). Every test that calls serpapi.com is gated this way,
+including the invalid-key error tests, so `env -u SERPAPI_KEY rake test` runs fully offline.
 Offline tests in `Tests/SerpApiTests/RequestTests.swift` stub the network with `StubURLProtocol`, passed through the internal `init(params:protocolClasses:)`.
 
 ## Architecture
@@ -63,7 +65,7 @@ Public API methods:
 | `md(params:)` | `/search?output=md` | `String` |
 | `location(params:)` | `/locations.json` | `[[String: Any]]` |
 | `account(apiKey:)` | `/account` | `[String: Any]` |
-| `searchArchive(searchID:format:)` | `/searches/{id}.json\|html\|md` | `Any` |
+| `searchArchive(searchID:format:)` | `/searches/{id}.json\|html\|md?output=<format>` (id path-escaped) | `Any` |
 
 ### Examples (`Examples/`)
 

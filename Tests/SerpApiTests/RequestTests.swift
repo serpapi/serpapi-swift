@@ -135,9 +135,39 @@ final class RequestTests: XCTestCase {
         XCTAssertEqual(lastPath, "/searches/abc123.md")
         XCTAssertEqual(md as? String, "---\n")
 
-        XCTAssertNil(lastQuery["output"])
+        XCTAssertEqual(lastQuery["output"], "md")
         XCTAssertEqual(lastQuery["api_key"], secret)
         XCTAssertEqual(lastQuery["source"], "serpapi-swift:\(SerpApi.version)")
+    }
+
+    func testSearchArchiveForcesOutputOverDefault() async throws {
+        let client = makeClient(["output": "html"])
+
+        StubURLProtocol.stub(.json(#"{"search_metadata": {"id": "abc123"}}"#))
+        let json = try await client.searchArchive(searchID: "abc123")
+        XCTAssertEqual(lastPath, "/searches/abc123.json")
+        XCTAssertEqual(lastQuery["output"], "json")
+        XCTAssertNotNil((json as? [String: Any])?["search_metadata"])
+
+        StubURLProtocol.stub(.text("<html></html>", contentType: "text/html"))
+        _ = try await client.searchArchive(searchID: "abc123", format: "html")
+        XCTAssertEqual(lastPath, "/searches/abc123.html")
+        XCTAssertEqual(lastQuery["output"], "html")
+
+        StubURLProtocol.stub(.text("---\n", contentType: "text/markdown"))
+        _ = try await client.searchArchive(searchID: "abc123", format: "md")
+        XCTAssertEqual(lastPath, "/searches/abc123.md")
+        XCTAssertEqual(lastQuery["output"], "md")
+
+        XCTAssertEqual(client.params["output"], "html")
+    }
+
+    func testPathEscape() {
+        XCTAssertEqual(SerpApiClient.pathEscape("6ae93aa414718b5740dcf35e"), "6ae93aa414718b5740dcf35e")
+        XCTAssertEqual(SerpApiClient.pathEscape("a-b_c.d~e"), "a-b_c.d~e")
+        XCTAssertEqual(SerpApiClient.pathEscape("a/b?c#d"), "a%2Fb%3Fc%23d")
+        XCTAssertEqual(SerpApiClient.pathEscape("caf\u{e9} 1+1"), "caf%C3%A9%201%2B1")
+        XCTAssertEqual(SerpApiClient.pathEscape(""), "")
     }
 
     func testSearchArchiveEscapesID() async throws {

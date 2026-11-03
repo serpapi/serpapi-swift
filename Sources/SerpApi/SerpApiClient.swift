@@ -44,9 +44,9 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     private static let contentTypeJson = "application/json"
     /// Maximum number of characters of a non-JSON error body included in error messages.
     private static let errorBodyPreviewLength = 200
-    /// RFC 3986 unreserved characters: everything else in a path segment is percent-encoded.
-    private static let pathSegmentAllowed = CharacterSet(
-        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    /// RFC 3986 unreserved characters: every other byte of a path segment is percent-encoded.
+    private static let pathSegmentUnreserved = Set(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~".utf8
     )
     /// HTTP status codes that are considered transient and worth retrying.
     private static let retryableStatusCodes: Set<Int> = [429, 500, 502, 503, 504]
@@ -201,17 +201,19 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
     /// - Parameters:
     ///   - searchID: from original search `results["search_metadata"]["id"]`.
     ///     It is percent-encoded as a single path segment.
-    ///   - format: "json", "html" or "md" [default: "json"]
+    ///   - format: "json", "html" or "md" [default: "json"]. Also sent as `output`,
+    ///     which SerpApi honors over the path extension, so a default `output` can't override it.
     /// - Returns: JSON Dictionary, or raw HTML / Markdown String
     public func searchArchive(searchID: String, format: String = "json") async throws -> Any {
         guard [Self.formatJson, Self.formatHtml, Self.formatMd].contains(format) else {
             throw SerpApiError.invalidDecoder("format must be \(Self.formatJson), \(Self.formatHtml) or \(Self.formatMd)")
         }
-        guard let escapedID = searchID.addingPercentEncoding(withAllowedCharacters: Self.pathSegmentAllowed) else {
-            throw SerpApiError.invalidParams("searchID cannot be percent-encoded: \(searchID)")
-        }
         let decoder: DecoderType = format == Self.formatJson ? .json : .text
-        return try await get(endpoint: "\(Self.endpointSearches)/\(escapedID).\(format)", decoder: decoder)
+        return try await get(
+            endpoint: "\(Self.endpointSearches)/\(Self.pathEscape(searchID)).\(format)",
+            decoder: decoder,
+            params: [Self.paramOutput: format]
+        )
     }
     
     /// Get account information using Account API
@@ -270,6 +272,20 @@ public final class SerpApiClient: CustomStringConvertible, Sendable {
         case json
         /// UTF-8 text body (HTML or Markdown)
         case text
+    }
+
+    /// Percent-encode `segment` as a single URL path segment, like Go's `url.PathEscape`:
+    /// `/`, `?`, `#` and every other byte outside the RFC 3986 unreserved set are escaped.
+    static func pathEscape(_ segment: String) -> String {
+        var escaped = ""
+        for byte in segment.utf8 {
+            if pathSegmentUnreserved.contains(byte) {
+                escaped.append(Character(Unicode.Scalar(byte)))
+            } else {
+                escaped += String(format: "%%%02X", byte)
+            }
+        }
+        return escaped
     }
 
     static func redactedURLString(_ url: URL) -> String {
