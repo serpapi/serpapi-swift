@@ -31,18 +31,19 @@ swift package generate-documentation
 
 Using Rake:
 ```bash
-rake            # full pipeline: check, dependency, version, build, test, oobt
+rake            # full pipeline: check, dependency, version, lint, build, test, oobt
 rake build      # build library only
 rake test       # run tests
-rake lint       # swiftlint
+rake lint       # swiftlint --strict (CI pins SwiftLint 0.65.1)
 rake format     # swiftformat
 rake demo       # run CLI demo
 rake events     # run EventsDemo GUI
-rake coverage   # test with coverage report
+rake coverage   # test with coverage report (offline: env -u SERPAPI_KEY rake coverage)
 rake tag        # create git tag from version in Version.swift
 ```
 
 Integration tests require `SERPAPI_KEY` env var; they are skipped automatically when it is absent.
+Offline tests in `Tests/SerpApiTests/RequestTests.swift` stub the network with `StubURLProtocol`, passed through the internal `init(params:protocolClasses:)`.
 
 ## Architecture
 
@@ -50,8 +51,8 @@ Integration tests require `SERPAPI_KEY` env var; they are skipped automatically 
 
 A single-file public API surface:
 
-- **`SerpApiClient`** — the main class. Initialized with a `[String: String]` params dict. Client-side params (`timeout`, `persistent`) are consumed by the constructor and stripped before being sent to the API. All requests go through the private `get(endpoint:decoder:params:)` method which merges constructor params with per-call overrides.
-- **`SerpApiError`** — a `LocalizedError` enum with cases: `invalidParams`, `requestFailed`, `jsonParseError`, `invalidDecoder`, `htmlParseError`.
+- **`SerpApiClient`** — the main class. Initialized with a `[String: String]` params dict. Client-side params (`timeout`, `persistent`, `max_retries`, `retry_base_delay`, `retry_max_delay`) are consumed by the constructor and stripped before being sent to the API. All requests go through the private `get(endpoint:decoder:params:)` method which merges constructor params with per-call overrides.
+- **`SerpApiError`** — a `LocalizedError` enum with cases: `invalidParams`, `requestFailed`, `jsonParseError`, `invalidDecoder`, `htmlParseError`, `cancellationError`. Non-2xx responses raise `requestFailed` with the status, the redacted URL and SerpApi's JSON `error` message (or a truncated body preview).
 - **`Version`** — a single `static let version` string injected as the `source` query param on every request.
 
 Public API methods:
@@ -68,7 +69,7 @@ Public API methods:
 
 Each example is a standalone Swift package that depends on the local library via `path: "../../"`.
 
-- **`Examples/Demo`** — CLI executable that exercises all five public API methods sequentially.
+- **`Examples/Demo`** — CLI executable that exercises all six public API methods sequentially.
 - **`Examples/EventsDemo`** — macOS/iOS SwiftUI app. Uses MVVM: `EventsViewModel` fetches Google Events results from SerpApi and exposes them to `ContentView`, `EventsListView`, `FiltersView`, and `ProfileView`. Theme constants live in `SerpApiTheme.swift`.
 
 ### Concurrency and networking

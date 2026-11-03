@@ -14,6 +14,7 @@ Query a vast range of data at scale, including web search results, flight schedu
 
 * **Configurable Session Mode**: Uses persistent `URLSession` pooling by default, with optional ephemeral mode via `"persistent": "false"`.
 * **Async/Await**: Native Swift concurrency support for non-blocking operations.
+* **HTML and Markdown Output**: Raw search engine HTML via `html()`, and Markdown for LLM / RAG pipelines via `md()`.
 * **Type-Safe**: Clean API design with error handling.
 * **Extensive Documentation**: Easy to follow with real-world examples.
 
