@@ -31,7 +31,7 @@ dependencies: [
 
 Or add it via Xcode: `File > Add Packages...` and search for `https://github.com/serpapi/serpapi-swift`.
 
-## Simple Usage
+## Quick start
 
 ```swift
 import SerpApi
@@ -54,7 +54,7 @@ Demo of the Events example app (macOS GUI):
 
 <video src="media/serpapi_swift_event.mp4" controls playsinline width="100%"></video>
 
-## Advanced Usage
+## Advanced usage
 
 ### Configuration
 
@@ -75,7 +75,7 @@ let results = try await client.search(params: [
 ])
 ```
 
-### Retries & Exponential Backoff
+### Retries & exponential backoff
 
 Transient failures (HTTP `429`/`5xx` and brief network errors) are retried automatically using full-jitter exponential backoff. The server's `Retry-After` header is honored when present. Retry behavior is **optional and fully configurable** — it defaults to `max_retries = 3` and can be disabled by setting `max_retries` to `"0"`.
 
@@ -91,7 +91,7 @@ let client = SerpApiClient(params: [
 
 Only transient failures are retried — client errors such as `401` (invalid key) fail immediately, and cancellation always propagates without being retried.
 
-### Async Search (Non-blocking)
+### Asynchronous searches
 
 SerpApi supports non-blocking search submission via `async=true`. This allows you to submit a batch of searches and retrieve them later.
 
@@ -108,7 +108,7 @@ if let searchMetadata = response["search_metadata"] as? [String: Any],
 }
 ```
 
-### HTML Output
+### HTML output
 
 Get the raw HTML from the search engine.
 
@@ -157,7 +157,7 @@ let account = try await client.account()
 print(account)
 ```
 
-## Developer Guide
+## Developer guide
 
 ### Dependencies
 Ruby and Rake must be installed to run the tests and demo, as well Swift via Xcode command line tools.
@@ -228,4 +228,4 @@ rake -T
 
 ## License
 
-MIT License.
+[MIT License](LICENSE)
